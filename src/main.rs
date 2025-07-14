@@ -2,14 +2,18 @@
 use std::env;
 use std::ffi::CStr;
 #[allow(unused_imports)]
-use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
+use std::io::Write;
+use std::path::PathBuf;
 
 use anyhow::Context;
 use anyhow::bail;
+use flate2::Compression;
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use sha1::{Digest, Sha1};
 use std::io;
 
 use clap::Parser;
@@ -31,6 +35,12 @@ enum Command {
 
         object_hash: String,
     },
+    HashObject {
+        #[clap(short = 'w')]
+        write: bool,
+
+        file: PathBuf,
+    },
 }
 
 enum Kind {
@@ -44,10 +54,10 @@ fn main() -> anyhow::Result<()> {
 
     match args.command {
         Command::Init => {
-            fs::create_dir(".git").unwrap();
-            fs::create_dir(".git/objects").unwrap();
-            fs::create_dir(".git/refs").unwrap();
-            fs::write(".git/HEAD", "ref: refs/heads/main\n").unwrap();
+            std::fs::create_dir(".git").unwrap();
+            std::fs::create_dir(".git/objects").unwrap();
+            std::fs::create_dir(".git/refs").unwrap();
+            std::fs::write(".git/HEAD", "ref: refs/heads/main\n").unwrap();
             println!("Initialized git directory");
         }
         Command::CatFile {
@@ -60,7 +70,7 @@ fn main() -> anyhow::Result<()> {
             );
 
             //TODO: Implement short object_hash to full object hash conversion
-            let f = fs::File::open(format!(
+            let f = std::fs::File::open(format!(
                 ".git/objects/{}/{}",
                 &object_hash[..2],
                 &object_hash[2..]
@@ -104,6 +114,46 @@ fn main() -> anyhow::Result<()> {
                 }
             };
         }
+        Command::HashObject { write, file } => {
+            fn write_blob<W: Write>(path: &PathBuf, writer: W) -> anyhow::Result<String> {
+                let stat = std::fs::metadata(path)
+                    .with_context(|| format!("stat file `{}`", path.display()))?;
+
+                let e = ZlibEncoder::new(writer, Compression::default());
+                let mut writer = HashWriter {
+                    writer: e,
+                    hasher: Sha1::new(),
+                };
+
+                write!(writer, "blob {}\0", stat.len())?;
+
+                let mut file = std::fs::File::open(path)?;
+                io::copy(&mut file, &mut writer).context("stream file content to writer")?;
+
+                writer.writer.finish()?;
+                let hash = writer.hasher.finalize();
+
+                Ok(hex::encode(hash))
+            }
+
+            let hash = if write {
+                let tmp = "temporary_blob";
+                let hash = write_blob(
+                    &file,
+                    std::fs::File::create(tmp).context("construct temporary file for blob")?,
+                )
+                .context("write out blob object")?;
+                std::fs::create_dir_all(format!(".git/objects/{}/", &hash[..2]))
+                    .context("create subdir of .git/objects")?;
+                std::fs::rename(tmp, format!(".git/objects/{}/{}", &hash[..2], &hash[2..]))
+                    .context("move temporary file to .git/objects")?;
+                hash
+            } else {
+                write_blob(&file, io::sink()).context("write out a blob object")?
+            };
+
+            println!("{hash}")
+        }
     }
 
     Ok(())
@@ -119,4 +169,21 @@ fn main() -> anyhow::Result<()> {
     // } else {
     //     println!("unknown command: {}", args[1])
     // }
+}
+
+struct HashWriter<W> {
+    writer: W,
+    hasher: Sha1,
+}
+
+impl<W: Write> Write for HashWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.writer.write(buf)?;
+        self.hasher.update(&buf[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
 }
