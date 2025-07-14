@@ -127,7 +127,8 @@ fn main() -> anyhow::Result<()> {
 
                 write!(writer, "blob {}\0", stat.len())?;
 
-                let mut file = std::fs::File::open(path)?;
+                let mut file = std::fs::File::open(path)
+                    .with_context(|| format!("open file {}", path.display()))?;
                 io::copy(&mut file, &mut writer).context("stream file content to writer")?;
 
                 writer.writer.finish()?;
@@ -143,10 +144,12 @@ fn main() -> anyhow::Result<()> {
                     std::fs::File::create(tmp).context("construct temporary file for blob")?,
                 )
                 .context("write out blob object")?;
+
                 std::fs::create_dir_all(format!(".git/objects/{}/", &hash[..2]))
                     .context("create subdir of .git/objects")?;
                 std::fs::rename(tmp, format!(".git/objects/{}/{}", &hash[..2], &hash[2..]))
                     .context("move temporary file to .git/objects")?;
+
                 hash
             } else {
                 write_blob(&file, io::sink()).context("write out a blob object")?
@@ -157,18 +160,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
-
-    // Uncomment this block to pass the first stage
-    // let args: Vec<String> = env::args().collect();
-    // if args[1] == "init" {
-    //     fs::create_dir(".git").unwrap();
-    //     fs::create_dir(".git/objects").unwrap();
-    //     fs::create_dir(".git/refs").unwrap();
-    //     fs::write(".git/HEAD", "ref: refs/heads/main\n").unwrap();
-    //     println!("Initialized git directory")
-    // } else {
-    //     println!("unknown command: {}", args[1])
-    // }
 }
 
 struct HashWriter<W> {
