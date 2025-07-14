@@ -6,7 +6,6 @@ use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
-use std::io::Write;
 
 use anyhow::Context;
 use anyhow::bail;
@@ -89,26 +88,20 @@ fn main() -> anyhow::Result<()> {
             };
 
             let size = size
-                .parse::<usize>()
+                .parse()
                 .with_context(|| format!(".git/objects file header has invalid size: {size}"))?;
-
-            buf.clear();
-            buf.resize(size, 0);
-            z.read_exact(&mut buf)
-                .context("read object content from .git/objects")?;
-            let n = z
-                .read(&mut [0])
-                .context("read object content from .git/objects")?;
-            if n != 0 {
-                bail!("expected end of object content, got more data");
-            }
-
-            let stdio = io::stdout();
-            let mut stdout = stdio.lock();
+            let mut z = z.take(size);
             match kind {
-                Kind::Blob => stdout
-                    .write_all(&buf)
-                    .context("write blob object content to stdout")?,
+                Kind::Blob => {
+                    let stdout = io::stdout();
+                    let mut stdout = stdout.lock();
+                    let n = io::copy(&mut z, &mut stdout)
+                        .context("copy .git/objects file content to stdout")?;
+                    anyhow::ensure!(
+                        n == size,
+                        "expected to read {size} bytes, but read {n} bytes"
+                    );
+                }
             };
         }
     }
