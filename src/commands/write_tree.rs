@@ -58,7 +58,8 @@ pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
 
     let mut tree_object = Vec::new();
     for (entry, name, metadata) in entries {
-        if name == ".git" {
+        // TODO: impl the .gitignore file
+        if name == ".git" || name == "target" {
             continue; // Skip the .git directory
         }
         let path = entry.path();
@@ -80,7 +81,7 @@ pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
             Object::blob_from_file(&path)
                 .context("construct blob object from file")?
                 .write_to_objects()
-                .context("write")?
+                .context("write blob object")?
         };
         tree_object.extend(mode.as_bytes());
         tree_object.extend(b" ");
