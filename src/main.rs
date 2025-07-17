@@ -1,5 +1,7 @@
+use std::path::Path;
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::Parser;
 use clap::Subcommand;
 
@@ -42,6 +44,10 @@ enum Command {
         parent_hash: Option<String>,
         tree_hash: String,
     },
+    Commit {
+        #[clap(short = 'm')]
+        message: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -72,6 +78,39 @@ fn main() -> anyhow::Result<()> {
             tree_hash,
             parent_hash,
         } => commands::commit_tree::invoke(message, &tree_hash, parent_hash.as_deref())?,
+        Command::Commit { message } => {
+            /***
+             * .git/HEAD -> ref: refs/heads/main
+             * .git/refs/heads/main -> parent_hash
+             */
+
+            let head = std::fs::read_to_string(".git/HEAD").context("read .git/HEAD")?;
+            let Some(git_ref) = head.strip_prefix("ref: ") else {
+                anyhow::bail!("invalid .git/HEAD format")
+            };
+            let git_ref = git_ref.trim();
+            let parent_hash = std::fs::read_to_string(format!(".git/{git_ref}"))
+                .with_context(|| format!("read current branch reference: `.git/{git_ref}`"))?;
+
+            let parent_hash = parent_hash.trim();
+
+            let Some(tree_hash) = commands::write_tree::write_tree_for(Path::new("./"))? else {
+                eprint!("empty tree");
+                return Ok(());
+            };
+
+            let tree_hash = hex::encode(tree_hash);
+
+            let commit_hash =
+                commands::commit_tree::write_commit(message, &tree_hash, Some(parent_hash))
+                    .context("write commit")?;
+            let commit_hash = format!("{}\n", hex::encode(commit_hash));
+
+            std::fs::write(format!(".git/{git_ref}"), &commit_hash)
+                .with_context(|| format!("update commit hash to `.git/{git_ref}`"))?;
+
+            print!("HEAD is now at {commit_hash}");
+        }
     }
 
     Ok(())

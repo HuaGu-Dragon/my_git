@@ -16,7 +16,7 @@ fn is_executable(metadata: &fs::Metadata) -> bool {
     }
 }
 
-pub fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
+pub(crate) fn write_tree_for(path: &Path) -> anyhow::Result<Option<[u8; 20]>> {
     let mut dir =
         fs::read_dir(path).with_context(|| format!("read directory `{}`", path.display()))?;
     let mut entries = Vec::new();

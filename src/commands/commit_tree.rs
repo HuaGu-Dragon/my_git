@@ -4,11 +4,11 @@ use anyhow::Context;
 
 use crate::objects::{Kind, Object};
 
-pub(crate) fn invoke(
+pub(crate) fn write_commit(
     message: String,
     tree_hash: &str,
     parent_hash: Option<&str>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<[u8; 20]> {
     let mut commit = String::new();
     writeln!(commit, "tree {tree_hash}")?;
     if let Some(parent) = parent_hash {
@@ -38,13 +38,21 @@ pub(crate) fn invoke(
     writeln!(commit, "")?;
     writeln!(commit, "{message}")?;
 
-    let hash = Object {
+    Object {
         kind: Kind::Commit,
         expected_size: commit.len() as u64,
         reader: Cursor::new(commit),
     }
     .write_to_objects()
-    .context("write commit object")?;
-    println!("{}", hex::encode(hash));
+    .context("write commit object")
+}
+
+pub(crate) fn invoke(
+    message: String,
+    tree_hash: &str,
+    parent_hash: Option<&str>,
+) -> anyhow::Result<()> {
+    let hash = write_commit(message, tree_hash, parent_hash).context("write commit")?;
+    println!("Created commit: {}", hex::encode(hash));
     Ok(())
 }
