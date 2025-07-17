@@ -6,5 +6,5 @@
 - [x] Read a tree object
 - [x] Write a tree object
 - [x] Write a tree object
-- [ ] Create a commit
+- [x] Create a commit
 - [ ] Clone a repository
